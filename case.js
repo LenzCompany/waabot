@@ -1,10 +1,11 @@
 require("./config")
+const fetch = require('node-fetch')
 const fs = require('fs')
 const util = require('util')
 const axios = require('axios')
 const { exec } = require("child_process")
 
-module.exports = async (ptz, m) => {
+module.exports = async (sock, m) => {
 try {
 const body = (
 (m.mtype === 'conversation' && m.message.conversation) ||
@@ -31,28 +32,113 @@ const isCmd = body.startsWith(prefix);
 const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
 const args = body.trim().split(/ +/).slice(1)
 const text = q = args.join(" ")
-const sender = m.key.fromMe ? (ptz.user.id.split(':')[0]+'@s.whatsapp.net' || ptz.user.id) : (m.key.participant || m.key.remoteJid)
-const botNumber = await ptz.decodeJid(ptz.user.id)
+const sender = m.key.fromMe ? (sock.user.id.split(':')[0]+'@s.whatsapp.net' || sock.user.id) : (m.key.participant || m.key.remoteJid)
+const botNumber = await sock.decodeJid(sock.user.id)
 const senderNumber = sender.split('@')[0]
 const isCreator = (m && m.sender && [botNumber, ...global.owner].map(v => v.replace(/[^0-9]/g, '') + '@s.whatsapp.net').includes(m.sender)) || false;
 const pushname = m.pushName || `${senderNumber}`
 const isBot = botNumber.includes(senderNumber)
 
+const reply = async(text) => {
+    sock.sendMessage(m.chat, {text: text}, { quoted: m})
+}
 
 switch(command) {
 case "menu": case "help" :{
-m.reply(`
-halo ${pushname}, ini adalah polosan bot, jadi fiturnya sedikit.
+m.reply(`Hallo ${pushname}!
 
-> Menu
-~ .ai
+*Menu*
+${prefix}openai - Chat Dengan OpenAI
+${prefix}lumin-ai - Chat Dengan Lumin-Ai
+
+*NEWS*
+${prefix}cnn - CNN News
+${prefix}cnbc - CNBC News
+${prefix}kumparan - Kumparan News
+${prefix}replubika - Replubika News
+
+*DOWNLOADER*
+${prefix}tiktok - Download Video Tiktok
+
+*SCREENSHOT WEBSITE*
+${prefix}sstab - Screenshot Website Di Tablet
+${prefix}sspc - Screenshot Website Di PC
+${prefix}sshp - Screenshot Website Di HP
+
+*SEARCH*
+${prefix}covid-19 - Info Covid-19
+${prefix}yts - Youtube Search
 `)
 }
+//SSWEB
 break
-case "ai":{
+case "sstab": case 'ss-tab': {
+    if (!text) return m.reply(`_${prefix + command} url_`)
+    let h = `https://btch.us.kg/sstab?url=${text}`
+
+    sock.sendFileUrl(m.chat, h, text, m)
+}
+break
+case "sspc": case 'ss-pc': {
+    if (!text) return m.reply(`_${prefix + command} url_`)
+    let h = `https://btch.us.kg/sspc?url=${text}`
+
+    sock.sendFileUrl(m.chat, h, text, m)
+}
+break
+case "sshp": case "ss-hp:": {
+    if (!text) return m.reply(`_${prefix + command} url_`)
+let h = `https://btch.us.kg/sshp?url=${text}`
+
+sock.sendFileUrl(m.chat, h, text, m)
+}       
+break
+//SEARCH
+case "covid-19" : {
+    let data = await fetch(`${global.api}covid-19`)
+    let json = await data.json()
+
+    let y = json.result
+    let { totalCases, recovered, deaths, activeCases, closedCases, lastUpdate} = y
+    reply(`Total Cases: ${totalCases}\n\nRecovered: ${recovered}\n\nDeaths: ${deaths}\n\nActive Cases: ${activeCases}\n\nClosed Cases: ${closedCases}\n\nLast Update: ${lastUpdate}`)
+}
+break
+case "yts": case "yt-search": {
+    let data = await fetch(`${global.api}yt-search?query=${text}`)
+    let json = await data.json()
+    let final = json.result.all.map(e => `Type: ${e.type}\n\nTitle: ${e.title}\n\nLink: ${e.url}\n`).join(`\n\n`)
+    reply(final)
+}
+break
+//DOWNLOADER
+case "tiktok": case "ttdl": {
+    if (!text) return m.reply(`_.tiktok url_`)
+    let data = await fetch(`${global.api}tiktok?url=${text}`)
+    let json = await data.json()
+    sock.sendMessage(m.chat, {video: {url: json.result.play}, caption: json.result.title,  quoted: m})
+}
+break
+//AI
+case "luminai": case "lumin-ai": {
+    if (!text) return m.reply(`_.luminai prompt_`)
+    let data = await fetch(`${global.api}lumin-ai?query=${text}`)
+    let json = await data.json()
+    reply(json.result.result)
+}
+break
+case "ai": case "openai":{
 if (!text) return m.reply(`_.ai prompt_`)
-let {data} = await axios.get("https://api.mininxd.my.id/gemini/?q=" + text); 
-m.reply(data.result);
+let data = await fetch(`${global.api}openai?query=${text}`)
+let json = await data.json()
+reply(json.result)
+}
+break
+//NEWS
+case "cnbc": case "cnn": case "kumparan": case "replubika": {
+    let data = await fetch(`${global.api}news-${command}`)
+    let json = await data.json()
+    let final = json.result.map(e => `${e.title}\n\n${e.link}`).join(`\n\n`)
+    reply(final)
 }
 break
 default:
